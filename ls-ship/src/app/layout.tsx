@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -12,8 +13,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
+    <ClerkProvider
+      appearance={{
+        baseTheme: [],
+        variables: {
+          colorBackground: "#0d0d0d",
+          colorPrimary: "#e07856",
+          colorText: "#e8e8e8",
+        },
+      }}
+    >
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    </ClerkProvider>
   );
 }
