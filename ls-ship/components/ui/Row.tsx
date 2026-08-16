@@ -7,7 +7,7 @@ interface RowProps {
   last?: boolean;
 }
 
-export function Row({ title, description, action, last = false }: RowProps) {
+export default function Row({ title, description, action, last = false }: RowProps) {
   return (
     <div
       className={`flex items-center justify-between px-4 py-[16px] ${!last ? 'border-b border-[#2a2a2a]' : ''}`}

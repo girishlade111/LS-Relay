@@ -5,7 +5,7 @@ interface BadgeProps {
   variant?: 'success' | 'danger' | 'neutral';
 }
 
-export function Badge({ children, variant = 'neutral' }: BadgeProps) {
+export default function Badge({ children, variant = 'neutral' }: BadgeProps) {
   const styles = {
     success: 'border-[#3ecf5e] text-[#3ecf5e]',
     danger: 'border-[#e5484d] text-[#e5484d]',
