@@ -2,13 +2,12 @@
 # Dependencies
 node_modules/
 
-# Build outputs
+# Build artifacts
 dist/
 build/
-.next/
-out/
+target/
 
-# Environment variables
+# Environment
 .env
 .env.local
 .env.*
@@ -16,6 +15,14 @@ out/
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
 
 # Python
 __pycache__/
@@ -36,19 +43,10 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
-*.pot
-*.pyc
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.hypothesis/
-
-# Logs
-*.log
-*.tmp
-
-# OS generated files
+.git/modules/
 .DS_Store
+*.swp
+*~
 .DS_Store?
 ._*
 .Spotlight-V100
