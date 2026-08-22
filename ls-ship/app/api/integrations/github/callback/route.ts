@@ -57,7 +57,9 @@ export async function GET(request: Request) {
     );
   }
 
-  await upsertIntegration(userId, "github", encrypt(tokenData.access_token));
+  await upsertIntegration(userId, "github", {
+    encryptedAccessToken: encrypt(tokenData.access_token),
+  });
 
   return NextResponse.redirect(new URL("/integrations?success=github", url));
 }

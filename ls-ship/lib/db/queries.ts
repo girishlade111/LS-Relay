@@ -22,10 +22,16 @@ export async function ensureUserSynced(
     .onConflictDoNothing({ target: users.id });
 }
 
+export interface IntegrationCredentials {
+  encryptedAccessToken: string;
+  encryptedRefreshToken?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export async function upsertIntegration(
   userId: string,
   provider: IntegrationProviderValue,
-  encryptedAccessToken: string
+  credentials: IntegrationCredentials
 ): Promise<void> {
   // `integrations` has no unique index on (userId, provider), so a native
   // onConflictDoUpdate isn't possible yet — resolve the existing row manually.
@@ -38,17 +44,31 @@ export async function upsertIntegration(
     )
     .limit(1);
 
+  const patch: Partial<typeof integrations.$inferInsert> = {
+    accessToken: credentials.encryptedAccessToken,
+  };
+  if (credentials.encryptedRefreshToken !== undefined) {
+    patch.refreshToken = credentials.encryptedRefreshToken;
+  }
+  if (credentials.metadata !== undefined) {
+    patch.metadata = credentials.metadata;
+  }
+
   if (existing) {
     await db
       .update(integrations)
-      .set({ accessToken: encryptedAccessToken })
+      .set(patch)
       .where(eq(integrations.id, existing.id));
     return;
   }
 
-  await db
-    .insert(integrations)
-    .values({ userId, provider, accessToken: encryptedAccessToken });
+  await db.insert(integrations).values({
+    userId,
+    provider,
+    accessToken: credentials.encryptedAccessToken,
+    refreshToken: credentials.encryptedRefreshToken,
+    metadata: credentials.metadata,
+  });
 }
 
 export async function countRepos(userId: string): Promise<number> {
