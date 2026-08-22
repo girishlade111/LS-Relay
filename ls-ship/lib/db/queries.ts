@@ -1,4 +1,7 @@
+import "server-only";
+import { randomBytes } from "crypto";
 import { and, count, desc, eq, gte } from "drizzle-orm";
+import { encrypt } from "../crypto";
 import { db } from "./client";
 import {
   integrations,
@@ -98,6 +101,111 @@ export async function updateIntegrationMetadata(
     .update(integrations)
     .set({ metadata: { ...existing.metadata, ...patch } })
     .where(eq(integrations.id, existing.id));
+}
+
+export interface RepoListItem {
+  id: string;
+  owner: string;
+  name: string;
+  defaultBaseBranch: string | null;
+  active: boolean;
+  createdAt: Date;
+}
+
+// Deliberately excludes `webhookSecret` — even encrypted, it has no reason to
+// leave the server.
+export async function getReposForUser(userId: string): Promise<RepoListItem[]> {
+  return db
+    .select({
+      id: repos.id,
+      owner: repos.owner,
+      name: repos.name,
+      defaultBaseBranch: repos.defaultBaseBranch,
+      active: repos.active,
+      createdAt: repos.createdAt,
+    })
+    .from(repos)
+    .where(eq(repos.userId, userId))
+    .orderBy(desc(repos.createdAt));
+}
+
+export type CreatedRepo = RepoListItem;
+
+export interface CreateRepoResult {
+  repo: CreatedRepo;
+  // Plaintext secret, returned exactly once so the UI can show setup
+  // instructions. Only the encrypted value is persisted and it is never
+  // decrypted for display again — webhook verification decrypts internally.
+  plaintextWebhookSecret: string;
+}
+
+export async function createRepo(
+  userId: string,
+  owner: string,
+  name: string,
+  defaultBaseBranch?: string
+): Promise<CreateRepoResult> {
+  const webhookSecret = randomBytes(32).toString("hex");
+
+  const [row] = await db
+    .insert(repos)
+    .values({
+      userId,
+      owner,
+      name,
+      defaultBaseBranch: defaultBaseBranch ?? null,
+      webhookSecret: encrypt(webhookSecret),
+    })
+    .returning();
+
+  return {
+    repo: {
+      id: row.id,
+      owner: row.owner,
+      name: row.name,
+      defaultBaseBranch: row.defaultBaseBranch,
+      active: row.active,
+      createdAt: row.createdAt,
+    },
+    plaintextWebhookSecret: webhookSecret,
+  };
+}
+
+// Both mutations are scoped by repoId AND userId — a repoId alone must never
+// be trusted from the client, since any user could otherwise guess/iterate ids.
+async function mutateOwnedRepo(
+  repoId: string,
+  userId: string,
+  run: () => Promise<unknown>
+): Promise<boolean> {
+  const [match] = await db
+    .select({ id: repos.id })
+    .from(repos)
+    .where(and(eq(repos.id, repoId), eq(repos.userId, userId)))
+    .limit(1);
+
+  if (!match) {
+    return false;
+  }
+
+  await run();
+  return true;
+}
+
+export async function toggleRepoActive(
+  repoId: string,
+  userId: string,
+  active: boolean
+): Promise<boolean> {
+  return mutateOwnedRepo(repoId, userId, () =>
+    db.update(repos).set({ active }).where(eq(repos.id, repoId))
+  );
+}
+
+export async function deleteRepo(repoId: string, userId: string): Promise<boolean> {
+  return mutateOwnedRepo(repoId, userId, () =>
+    db.delete(repos).where(eq(repos.id, repoId))
+  );
 }
 
 export async function countRepos(userId: string): Promise<number> {
