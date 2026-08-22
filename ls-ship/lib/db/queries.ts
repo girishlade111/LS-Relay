@@ -1,8 +1,16 @@
 import { and, count, desc, eq, gte } from "drizzle-orm";
 import { db } from "./client";
-import { repos, users, webhookEventStatus, webhookEvents } from "./schema";
+import {
+  integrations,
+  integrationProvider,
+  repos,
+  users,
+  webhookEventStatus,
+  webhookEvents,
+} from "./schema";
 
 export type WebhookEventStatusValue = (typeof webhookEventStatus.enumValues)[number];
+export type IntegrationProviderValue = (typeof integrationProvider.enumValues)[number];
 
 export async function ensureUserSynced(
   clerkUserId: string,
@@ -12,6 +20,35 @@ export async function ensureUserSynced(
     .insert(users)
     .values({ id: clerkUserId, email })
     .onConflictDoNothing({ target: users.id });
+}
+
+export async function upsertIntegration(
+  userId: string,
+  provider: IntegrationProviderValue,
+  encryptedAccessToken: string
+): Promise<void> {
+  // `integrations` has no unique index on (userId, provider), so a native
+  // onConflictDoUpdate isn't possible yet — resolve the existing row manually.
+  // Adding that index would turn this into one atomic upsert statement.
+  const [existing] = await db
+    .select({ id: integrations.id })
+    .from(integrations)
+    .where(
+      and(eq(integrations.userId, userId), eq(integrations.provider, provider))
+    )
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(integrations)
+      .set({ accessToken: encryptedAccessToken })
+      .where(eq(integrations.id, existing.id));
+    return;
+  }
+
+  await db
+    .insert(integrations)
+    .values({ userId, provider, accessToken: encryptedAccessToken });
 }
 
 export async function countRepos(userId: string): Promise<number> {
