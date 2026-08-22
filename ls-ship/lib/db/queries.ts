@@ -71,6 +71,35 @@ export async function upsertIntegration(
   });
 }
 
+export type IntegrationRow = typeof integrations.$inferSelect;
+
+export async function listIntegrations(userId: string): Promise<IntegrationRow[]> {
+  return db.select().from(integrations).where(eq(integrations.userId, userId));
+}
+
+export async function updateIntegrationMetadata(
+  userId: string,
+  provider: IntegrationProviderValue,
+  patch: Record<string, unknown>
+): Promise<void> {
+  const [existing] = await db
+    .select({ id: integrations.id, metadata: integrations.metadata })
+    .from(integrations)
+    .where(
+      and(eq(integrations.userId, userId), eq(integrations.provider, provider))
+    )
+    .limit(1);
+
+  if (!existing) {
+    return;
+  }
+
+  await db
+    .update(integrations)
+    .set({ metadata: { ...existing.metadata, ...patch } })
+    .where(eq(integrations.id, existing.id));
+}
+
 export async function countRepos(userId: string): Promise<number> {
   const [row] = await db
     .select({ total: count() })
