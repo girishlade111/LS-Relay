@@ -1,7 +1,7 @@
 import "server-only";
 import { randomBytes } from "crypto";
 import { and, count, desc, eq, gte } from "drizzle-orm";
-import { encrypt } from "../crypto";
+import { decrypt, encrypt } from "../crypto";
 import { db } from "./client";
 import {
   integrations,
