@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LS Ship
 
-## Getting Started
+LS Ship is a multi-tenant SaaS port of a legacy n8n automation workflow. Connect a GitHub repo, and every push is processed server-side:
 
-First, run the development server:
+1. A webhook receives the push and verifies its HMAC signature.
+2. Commit messages are parsed for Jira task keys and automation flags.
+3. Valid commits automatically **open pull requests** against a base branch (skipping ones that already exist).
+4. Flagged tasks are moved to **Development Done** in Jira.
+5. Results are announced to **Slack** and logged to a **Notion** page.
+6. Everything — created PRs, skipped commits, parse failures, errors — lands in an auditable event log behind the dashboard.
+
+Unlike the old workflow, each user connects their own integrations (OAuth), owns their own repos, and their tokens/secrets are encrypted at rest with AES-256-GCM.
+
+## Tech stack
+
+Next.js 14 (App Router) · TypeScript · Tailwind CSS · Drizzle ORM + Neon Postgres · Clerk auth · Octokit · official Notion SDK
+
+## Environment variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+| Variable | Where to get it |
+| --- | --- |
+| `DATABASE_URL` | Neon dashboard → your project → Connection string |
+| `ENCRYPTION_KEY` | Generate yourself: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk dashboard → API Keys |
+| `CLERK_SECRET_KEY` | Clerk dashboard → API Keys |
+| `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` | GitHub → Settings → Developer settings → OAuth Apps → New OAuth App. Callback URL: `<your-domain>/api/integrations/github/callback` |
+| `JIRA_CLIENT_ID` / `JIRA_CLIENT_SECRET` | Atlassian developer console → OAuth 2.0 (3LO) app. Callback URL: `<your-domain>/api/integrations/jira/callback` |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Slack → api.slack.com/apps → your app → OAuth & Permissions. Redirect URL: `<your-domain>/api/integrations/slack/callback` |
+| `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` | notion.so/my-integrations → create a public integration. Redirect URI: `<your-domain>/api/integrations/notion/callback` |
+| `NEXT_PUBLIC_APP_URL` | The public origin of your deployment (e.g. `https://ls-ship.vercel.app`). Used for all OAuth redirects and webhook URLs |
+
+## Local setup
 
 ```bash
+git clone <repo-url>
+cd ls-ship
+npm install
+cp .env.example .env.local   # then fill in every value
+npm run db:push              # creates/updates tables in Neon
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Commit message format
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+TASK-123 Short commit message [flags]
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The part before the first space must match `KEY-<digits>` (any uppercase prefix). Flags go in trailing square brackets, comma-separated:
 
-## Learn More
+| Flag | Effect |
+| --- | --- |
+| `auto-pr` | Open a PR from the pushed branch. Requires a base branch flag, e.g. `[auto-pr,main]` (falls back to repo default, then account default) |
+| `taskcompleted` | Move the Jira task to Development Done |
+| any other word | Treated as the base branch name |
 
-To learn more about Next.js, take a look at the following resources:
+Examples:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+PROJ-101 Fix login validation            → tracked, no automation
+PROJ-102 Ship dark mode [auto-pr,staging]        → PR into staging
+PROJ-103 Update deps [taskcompleted]             → Jira task marked done
+PROJ-104 Full flow [auto-pr,main,taskcompleted]  → PR into main + done
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Commits that don't match the format are logged as `invalid` events, never silently dropped.
 
-## Deploy on Vercel
+## Deployment (Vercel)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Push the repo and connect it in Vercel (framework auto-detected).
+2. Add **every** variable above under Project → Settings → Environment Variables.
+3. Set `NEXT_PUBLIC_APP_URL` to the production domain Vercel assigns (or your custom domain) — OAuth callbacks and generated webhook URLs derive from it.
+4. Deploy, then update each provider's redirect/callback URL to the production domain if you only registered localhost earlier.
+5. For each connected repo, open GitHub → Settings → Webhooks and confirm the Payload URL points at the **production** domain (`https://<your-domain>/api/webhooks/github/<repoId>`). If you tested locally, re-add the webhook using the URL shown when re-saving the repo on the Repos page — note the webhook secret changes if you regenerate it.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Existing database installs
+
+If your Neon database predates the settings feature, apply this once (fresh installs get it via `db:push`):
+
+```sql
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "defaultBaseBranch" text;
+```
