@@ -295,6 +295,64 @@ export async function logWebhookEvent(event: WebhookEventInsert): Promise<void> 
   });
 }
 
+export async function getUserDefaultBaseBranch(
+  userId: string
+): Promise<string | null> {
+  const [row] = await db
+    .select({ defaultBaseBranch: users.defaultBaseBranch })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return row?.defaultBaseBranch ?? null;
+}
+
+export async function updateUserDefaultBaseBranch(
+  userId: string,
+  branch: string | null
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ defaultBaseBranch: branch })
+    .where(eq(users.id, userId));
+}
+
+export interface WebhookEventLogItem {
+  id: string;
+  owner: string;
+  name: string;
+  jiraKey: string | null;
+  status: WebhookEventStatusValue;
+  prUrl: string | null;
+  createdAt: Date;
+}
+
+export async function listWebhookEvents(
+  userId: string,
+  opts: { status?: WebhookEventStatusValue; limit: number; offset: number }
+): Promise<WebhookEventLogItem[]> {
+  const where = opts.status
+    ? and(eq(repos.userId, userId), eq(webhookEvents.status, opts.status))
+    : eq(repos.userId, userId);
+
+  return db
+    .select({
+      id: webhookEvents.id,
+      owner: repos.owner,
+      name: repos.name,
+      jiraKey: webhookEvents.jiraKey,
+      status: webhookEvents.status,
+      prUrl: webhookEvents.prUrl,
+      createdAt: webhookEvents.createdAt,
+    })
+    .from(webhookEvents)
+    .innerJoin(repos, eq(webhookEvents.repoId, repos.id))
+    .where(where)
+    .orderBy(desc(webhookEvents.createdAt))
+    .limit(opts.limit)
+    .offset(opts.offset);
+}
+
 export async function countRepos(userId: string): Promise<number> {
   const [row] = await db
     .select({ total: count() })

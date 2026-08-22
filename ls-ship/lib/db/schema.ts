@@ -29,6 +29,9 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // Global fallback when a commit requests a PR without naming a base branch
+  // and the repo has no override of its own.
+  defaultBaseBranch: text("defaultBaseBranch"),
 });
 
 export const integrations = pgTable("integrations", {
