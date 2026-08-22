@@ -33,6 +33,11 @@ const providers: {
     description:
       "Get notified in a channel when pull requests are created or tasks are completed.",
   },
+  {
+    provider: "notion",
+    name: "Notion",
+    description: "Log automation activity into a Notion page.",
+  },
 ];
 
 async function saveChannelId(formData: FormData): Promise<void> {
@@ -53,6 +58,24 @@ async function saveChannelId(formData: FormData): Promise<void> {
   revalidatePath("/integrations");
 }
 
+async function saveBlockId(formData: FormData): Promise<void> {
+  "use server";
+
+  const { userId } = await auth();
+  if (!userId) {
+    return;
+  }
+
+  const raw = formData.get("blockId");
+  const blockId = typeof raw === "string" ? raw.trim() : "";
+  if (!blockId) {
+    return;
+  }
+
+  await updateIntegrationMetadata(userId, "notion", { blockId });
+  revalidatePath("/integrations");
+}
+
 export default async function IntegrationsPage({
   searchParams,
 }: {
@@ -66,12 +89,19 @@ export default async function IntegrationsPage({
   const rows = await listIntegrations(userId);
   const byProvider = new Map(rows.map((row) => [row.provider, row]));
 
+  const metadataFor = (provider: IntegrationProviderValue) =>
+    byProvider.get(provider)?.metadata ?? {};
+  const slackChannelId =
+    typeof metadataFor("slack").channelId === "string"
+      ? (metadataFor("slack").channelId as string)
+      : "";
+  const notionBlockId =
+    typeof metadataFor("notion").blockId === "string"
+      ? (metadataFor("notion").blockId as string)
+      : "";
+
   const error = searchParams.error;
   const success = searchParams.success;
-  const slackRow = byProvider.get("slack");
-  const slackMetadata = slackRow?.metadata ?? {};
-  const channelId =
-    typeof slackMetadata.channelId === "string" ? slackMetadata.channelId : "";
 
   return (
     <>
@@ -84,7 +114,7 @@ export default async function IntegrationsPage({
         ) : null}
       </div>
 
-      <div className="mt-6 grid gap-4">
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
         {providers.map(({ provider, name, description }) => {
           const connected = byProvider.has(provider);
 
@@ -93,7 +123,7 @@ export default async function IntegrationsPage({
               <div className="flex items-center justify-between">
                 <h2 className="font-medium">{name}</h2>
                 <Badge variant={connected ? "success" : "neutral"}>
-                  {connected ? "Connected" : "Not connected"}
+                  {connected ? "Connected" : "Not Connected"}
                 </Badge>
               </div>
               <p className="mt-1 max-w-[440px] text-sm text-text-muted">
@@ -103,6 +133,7 @@ export default async function IntegrationsPage({
               {!connected ? (
                 <Button
                   href={`/api/integrations/${provider}/connect`}
+                  variant="accent"
                   className="mt-4"
                 >
                   Connect {name}
@@ -122,11 +153,30 @@ export default async function IntegrationsPage({
                   <Input
                     name="channelId"
                     placeholder="Channel ID (e.g. C0123456789)"
-                    defaultValue={channelId}
+                    defaultValue={slackChannelId}
                     aria-label="Slack channel ID"
                     className="max-w-xs"
                   />
                   <Button type="submit">Save channel</Button>
+                </form>
+              ) : null}
+
+              {/* Same MVP pattern as Slack: paste the page/block ID taken from
+                  the page URL in Notion. A searchable page picker backed by the
+                  search endpoint is a good v2 upgrade. */}
+              {provider === "notion" && connected ? (
+                <form
+                  action={saveBlockId}
+                  className="mt-4 flex items-center gap-2 border-t border-border pt-4"
+                >
+                  <Input
+                    name="blockId"
+                    placeholder="Page or block ID (from its URL)"
+                    defaultValue={notionBlockId}
+                    aria-label="Notion page or block ID"
+                    className="max-w-xs"
+                  />
+                  <Button type="submit">Save page</Button>
                 </form>
               ) : null}
             </Card>
