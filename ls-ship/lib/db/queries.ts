@@ -208,6 +208,93 @@ export async function deleteRepo(repoId: string, userId: string): Promise<boolea
   );
 }
 
+export interface RepoWithSecret {
+  id: string;
+  userId: string;
+  owner: string;
+  name: string;
+  webhookSecret: string; // encrypted at rest
+  defaultBaseBranch: string | null;
+  active: boolean;
+}
+
+export async function getRepoById(repoId: string): Promise<RepoWithSecret | null> {
+  const [row] = await db
+    .select({
+      id: repos.id,
+      userId: repos.userId,
+      owner: repos.owner,
+      name: repos.name,
+      webhookSecret: repos.webhookSecret,
+      defaultBaseBranch: repos.defaultBaseBranch,
+      active: repos.active,
+    })
+    .from(repos)
+    .where(eq(repos.id, repoId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export interface DecryptedIntegration {
+  accessToken: string;
+  refreshToken: string | null;
+  metadata: Record<string, unknown>;
+}
+
+// Tokens are decrypted on read and must never be logged or serialized into a
+// response. Jira's refresh flow (Prompt 12) will consume `refreshToken` here.
+export async function getDecryptedIntegration(
+  userId: string,
+  provider: IntegrationProviderValue
+): Promise<DecryptedIntegration | null> {
+  const [row] = await db
+    .select({
+      accessToken: integrations.accessToken,
+      refreshToken: integrations.refreshToken,
+      metadata: integrations.metadata,
+    })
+    .from(integrations)
+    .where(
+      and(eq(integrations.userId, userId), eq(integrations.provider, provider))
+    )
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    accessToken: decrypt(row.accessToken),
+    refreshToken: row.refreshToken ? decrypt(row.refreshToken) : null,
+    metadata: row.metadata,
+  };
+}
+
+export interface WebhookEventInsert {
+  repoId: string;
+  jiraKey?: string | null;
+  commands?: string[];
+  baseBranch?: string | null;
+  pushBranch: string;
+  status: WebhookEventStatusValue;
+  prUrl?: string | null;
+  errorMessage?: string | null;
+}
+
+export async function logWebhookEvent(event: WebhookEventInsert): Promise<void> {
+  await db.insert(webhookEvents).values({
+    repoId: event.repoId,
+    jiraKey: event.jiraKey ?? null,
+    commands: event.commands ?? [],
+    baseBranch: event.baseBranch ?? null,
+    pushBranch: event.pushBranch,
+    status: event.status,
+    prUrl: event.prUrl ?? null,
+    errorMessage: event.errorMessage ?? null,
+  });
+}
+
 export async function countRepos(userId: string): Promise<number> {
   const [row] = await db
     .select({ total: count() })
