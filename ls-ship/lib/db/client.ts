@@ -40,7 +40,9 @@ const sql = new Proxy(rawSql, {
   apply(target, thisArg, args) {
     return withRetry(() =>
       Reflect.apply(
-        target as (...callArgs: unknown[]) => Promise<Record<string, any>[]>,
+        target as (
+          ...callArgs: unknown[]
+        ) => Promise<Record<string, unknown>[]>,
         thisArg,
         args
       )
