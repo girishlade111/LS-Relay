@@ -476,27 +476,55 @@ export function RepoList({
                   <CopyButton value={setup.webhookSecret} />
                 </div>
                 <p className="mt-2 text-sm text-text-muted">
-                  This secret will never be shown again after you leave this
-                  page — copy it somewhere safe now.
+                  {webhookOk
+                    ? "GitHub will deliver push events to this URL — nothing else to configure."
+                    : "This secret will never be shown again after you leave this page — copy it somewhere safe now."}
                 </p>
               </div>
             </div>
 
-            <ol className="mt-5 list-decimal space-y-1 pl-5 text-sm text-text-muted">
-              <li>Go to the GitHub repo&apos;s Settings → Webhooks → Add webhook.</li>
-              <li>Paste the URL above as Payload URL.</li>
-              <li>Set Content type to application/json.</li>
-              <li>Paste the secret above as Secret.</li>
-              <li>Select &quot;Just the push event&quot;.</li>
-              <li>Save.</li>
-            </ol>
+            {webhookOk ? (
+              <p className="mt-4 rounded-control border border-border bg-panel px-3 py-2 text-sm text-text-muted">
+                Pushes to this repo will now appear under Logs. Commits like{" "}
+                <code className="font-mono">TASK-123 Fix bug [auto-pr,main]</code>{" "}
+                trigger PRs and Jira updates automatically.
+              </p>
+            ) : (
+              <>
+                <p className="mt-4 rounded-control border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  Automatic registration failed
+                  {setup.webhook?.message
+                    ? ` — ${setup.webhook.message}`
+                    : ""}
+                  . Set the webhook up manually with the steps below.
+                </p>
+                <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-text-muted">
+                  <li>Go to the GitHub repo&apos;s Settings → Webhooks → Add webhook.</li>
+                  <li>Paste the URL above as Payload URL.</li>
+                  <li>Set Content type to application/json.</li>
+                  <li>Paste the secret above as Secret.</li>
+                  <li>Select &quot;Just the push event&quot;.</li>
+                  <li>Save.</li>
+                </ol>
+              </>
+            )}
+
+            {localOnly ? (
+              <p className="mt-4 rounded-control border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-text-muted">
+                Note: this Payload URL points at your own machine, which GitHub
+                cannot reach — deploy the app or expose it via a tunnel (e.g.{" "}
+                <code className="font-mono">ngrok http 3000</code>) and reconnect
+                this repo for live pushes.
+              </p>
+            ) : null}
 
             <div className="mt-6 flex justify-end">
               <Button onClick={() => setSetup(null)}>Done</Button>
             </div>
           </Card>
         </div>
-      ) : null}
+        );
+      })()}
     </>
   );
 }
