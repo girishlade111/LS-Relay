@@ -33,17 +33,40 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   async function copy() {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    // navigator.clipboard exists only in secure contexts (https or localhost)
+    // — fall back to a temporary textarea for other hosts/browsers.
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      setState("copied");
+      setTimeout(() => setState("idle"), 1500);
+    } catch {
+      setState("failed");
+      setTimeout(() => setState("idle"), 4000);
+    }
   }
 
   return (
-    <Button type="button" onClick={copy} className="shrink-0">
-      {copied ? "Copied" : "Copy"}
+    <Button
+      type="button"
+      onClick={copy}
+      title={state === "failed" ? "Select the text and press Ctrl+C" : undefined}
+      className="shrink-0"
+    >
+      {state === "copied" ? "Copied" : state === "failed" ? "Ctrl+C" : "Copy"}
     </Button>
   );
 }
