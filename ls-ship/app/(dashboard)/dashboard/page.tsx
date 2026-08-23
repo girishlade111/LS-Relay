@@ -6,7 +6,6 @@ import {
   listRecentEvents,
   type WebhookEventStatusValue,
 } from "@/lib/db/queries";
-import { webhookEventStatus } from "@/lib/db/schema";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
