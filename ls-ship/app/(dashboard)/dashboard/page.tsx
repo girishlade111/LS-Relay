@@ -6,10 +6,12 @@ import {
   listRecentEvents,
   type WebhookEventStatusValue,
 } from "@/lib/db/queries";
+import { webhookEventStatus } from "@/lib/db/schema";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Row } from "@/components/ui/Row";
+import { AutoRefresh } from "@/components/dashboard/AutoRefresh";
 
 const badgeVariantByStatus: Record<WebhookEventStatusValue, BadgeVariant> = {
   received: "neutral",
