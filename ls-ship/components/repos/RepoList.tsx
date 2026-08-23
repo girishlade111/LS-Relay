@@ -199,8 +199,6 @@ export function RepoList({
     }
   }
 
-  const connectedKeys = new Set(repos.map((repo) => `${repo.owner}/${repo.name}`));
-
   return (
     <>
       <Card className="p-4">
