@@ -68,6 +68,7 @@ export function RepoList({
   const [ghLoaded, setGhLoaded] = useState(false);
   const [ghError, setGhError] = useState<string | null>(null);
   const [ghRepos, setGhRepos] = useState<GithubRepoOption[]>([]);
+  const [ghSearch, setGhSearch] = useState("");
 
   async function connectRepo(payload: {
     owner: string;
