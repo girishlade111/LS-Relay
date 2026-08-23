@@ -324,6 +324,7 @@ export interface WebhookEventLogItem {
   jiraKey: string | null;
   status: WebhookEventStatusValue;
   prUrl: string | null;
+  errorMessage: string | null;
   createdAt: Date;
 }
 
