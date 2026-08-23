@@ -428,12 +428,33 @@ export function RepoList({
 
       {/* One-time setup card. The plaintext secret only exists in this state —
           once dismissed or on navigation it can never be retrieved again. */}
-      {setup ? (
+      {setup ? (() => {
+        const webhookOk =
+          setup.webhook?.status === "created" ||
+          setup.webhook?.status === "updated";
+        let localOnly = false;
+        try {
+          const hostname = new URL(setup.webhookUrl).hostname;
+          localOnly =
+            hostname === "localhost" ||
+            hostname === "127.0.0.1" ||
+            hostname.endsWith(".local");
+        } catch {
+          localOnly = false;
+        }
+
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 p-4">
           <Card className="w-full max-w-lg p-6">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-h1">Add the webhook on GitHub</h2>
-              <Badge variant="danger">Secret shown once</Badge>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-h1">
+                {webhookOk ? "Repo connected" : "Add the webhook on GitHub"}
+              </h2>
+              {webhookOk ? (
+                <Badge variant="success">Webhook registered automatically</Badge>
+              ) : (
+                <Badge variant="danger">Secret shown once</Badge>
+              )}
             </div>
 
             <div className="mt-5 space-y-3">
