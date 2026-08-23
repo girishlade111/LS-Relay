@@ -17,6 +17,7 @@ interface SetupInfo {
   repo: RepoItem;
   webhookUrl: string;
   webhookSecret: string;
+  webhook?: { status: string; message?: string };
 }
 
 interface GithubRepoOption {
