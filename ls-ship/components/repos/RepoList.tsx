@@ -200,6 +200,13 @@ export function RepoList({
     }
   }
 
+  const query = ghSearch.trim().toLowerCase();
+  const filteredGhRepos = query
+    ? ghRepos.filter((repo) =>
+        `${repo.owner}/${repo.name}`.toLowerCase().includes(query)
+      )
+    : ghRepos;
+
   return (
     <>
       <Card className="p-4">
