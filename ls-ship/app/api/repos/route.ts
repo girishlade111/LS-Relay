@@ -1,7 +1,14 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createRepo, deleteRepo, toggleRepoActive } from "@/lib/db/queries";
+import {
+  createRepo,
+  deleteRepo,
+  getDecryptedIntegration,
+  toggleRepoActive,
+} from "@/lib/db/queries";
+import { getGithubClient } from "@/lib/github/client";
+import { upsertRepoWebhook } from "@/lib/github/webhooks";
 
 const createSchema = z.object({
   owner: z.string().trim().min(1, "owner is required"),
