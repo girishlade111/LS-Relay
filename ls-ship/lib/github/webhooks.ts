@@ -21,7 +21,7 @@ export async function upsertRepoWebhook(
   };
 
   try {
-    const { data: hooks } = await octokit.repos.listHooks({
+    const { data: hooks } = await octokit.repos.listWebhooks({
       owner: params.owner,
       repo: params.repo,
       per_page: 100,
@@ -29,7 +29,7 @@ export async function upsertRepoWebhook(
 
     const existing = hooks.find((hook) => hook.config?.url === params.url);
     if (existing) {
-      await octokit.repos.updateHook({
+      await octokit.repos.updateWebhook({
         owner: params.owner,
         repo: params.repo,
         hook_id: existing.id,
@@ -40,7 +40,7 @@ export async function upsertRepoWebhook(
       return { status: "updated", hookId: existing.id };
     }
 
-    const { data: created } = await octokit.repos.createHook({
+    const { data: created } = await octokit.repos.createWebhook({
       owner: params.owner,
       repo: params.repo,
       name: "web",
