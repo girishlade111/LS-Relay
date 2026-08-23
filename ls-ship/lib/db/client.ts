@@ -39,9 +39,13 @@ async function withRetry<T>(run: () => Promise<T>): Promise<T> {
 const sql = new Proxy(rawSql, {
   apply(target, thisArg, args) {
     return withRetry(() =>
-      Reflect.apply(target as (...callArgs: unknown[]) => unknown, thisArg, args)
-    ) as ReturnType<typeof rawSql>;
+      Reflect.apply(
+        target as (...callArgs: unknown[]) => Promise<Record<string, any>[]>,
+        thisArg,
+        args
+      )
+    );
   },
-});
+}) as typeof rawSql;
 
 export const db = drizzle(sql, { schema });
