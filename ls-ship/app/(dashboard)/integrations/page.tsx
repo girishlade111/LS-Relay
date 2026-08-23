@@ -36,7 +36,7 @@ const providers: {
     provider: "notion",
     name: "Notion",
     description: "Log automation activity into a Notion page.",
-  };
+  },
 ];
 
 const errorMessages: Record<string, string> = {
