@@ -524,7 +524,7 @@ export function RepoList({
           </Card>
         </div>
         );
-      })()}
+      })() : null}
     </>
   );
 }
