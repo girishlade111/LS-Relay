@@ -19,6 +19,13 @@ interface SetupInfo {
   webhookSecret: string;
 }
 
+interface GithubRepoOption {
+  owner: string;
+  name: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+}
+
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "short",
@@ -41,33 +48,32 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-export function RepoList({ initialRepos }: { initialRepos: RepoListItem[] }) {
+export function RepoList({
+  initialRepos,
+  githubConnected,
+}: {
+  initialRepos: RepoListItem[];
+  githubConnected: boolean;
+}) {
   const [repos, setRepos] = useState<RepoItem[]>(initialRepos);
+  const [mode, setMode] = useState<"picker" | "manual">(
+    githubConnected ? "picker" : "manual"
+  );
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupInfo | null>(null);
 
-  async function handleAdd(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (submitting) {
-      return;
-    }
+  const [ghLoading, setGhLoading] = useState(false);
+  const [ghLoaded, setGhLoaded] = useState(false);
+  const [ghError, setGhError] = useState<string | null>(null);
+  const [ghRepos, setGhRepos] = useState<GithubRepoOption[]>([]);
 
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const payload = {
-      owner: String(data.get("owner") ?? "").trim(),
-      name: String(data.get("name") ?? "").trim(),
-      ...(String(data.get("defaultBaseBranch") ?? "").trim()
-        ? {
-            defaultBaseBranch: String(
-              data.get("defaultBaseBranch")
-            ).trim(),
-          }
-        : {}),
-    };
-
+  async function connectRepo(payload: {
+    owner: string;
+    name: string;
+    defaultBaseBranch?: string;
+  }): Promise<boolean> {
     setSubmitting(true);
     setFormError(null);
     try {
@@ -79,15 +85,76 @@ export function RepoList({ initialRepos }: { initialRepos: RepoListItem[] }) {
       const body = await response.json();
       if (!response.ok) {
         setFormError(body.error ?? "Failed to add repo");
-        return;
+        return false;
       }
       setRepos((prev) => [body.repo as RepoItem, ...prev]);
       setSetup(body as SetupInfo);
-      form.reset();
+      return true;
     } catch {
       setFormError("Network error — please try again");
+      return false;
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleAdd(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) {
+      return;
+    }
+
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const baseBranchRaw = String(data.get("defaultBaseBranch") ?? "").trim();
+
+    const ok = await connectRepo({
+      owner: String(data.get("owner") ?? "").trim(),
+      name: String(data.get("name") ?? "").trim(),
+      ...(baseBranchRaw ? { defaultBaseBranch: baseBranchRaw } : {}),
+    });
+    if (ok) {
+      form.reset();
+    }
+  }
+
+  async function loadGithubRepos() {
+    if (ghLoading) {
+      return;
+    }
+    setGhLoading(true);
+    setGhError(null);
+    try {
+      const response = await fetch("/api/integrations/github/repos");
+      const body = await response.json();
+      if (!response.ok) {
+        setGhError(body.error ?? "Failed to load repositories");
+        return;
+      }
+      const connected = new Set(repos.map((repo) => `${repo.owner}/${repo.name}`));
+      setGhRepos(
+        (body.repos as GithubRepoOption[]).filter(
+          (repo) => !connected.has(`${repo.owner}/${repo.name}`)
+        )
+      );
+      setGhLoaded(true);
+    } catch {
+      setGhError("Network error — please try again");
+    } finally {
+      setGhLoading(false);
+    }
+  }
+
+  async function handlePick(repo: GithubRepoOption) {
+    const ok = await connectRepo({
+      owner: repo.owner,
+      name: repo.name,
+      defaultBaseBranch: repo.defaultBranch,
+    });
+    if (ok) {
+      setGhRepos((prev) =>
+        prev.filter((r) => !(r.owner === repo.owner && r.name === repo.name))
+      );
     }
   }
 
@@ -132,40 +199,134 @@ export function RepoList({ initialRepos }: { initialRepos: RepoListItem[] }) {
     }
   }
 
+  const connectedKeys = new Set(repos.map((repo) => `${repo.owner}/${repo.name}`));
+
   return (
     <>
       <Card className="p-4">
-        <h2 className="font-medium">Add a repo</h2>
-        <form
-          onSubmit={handleAdd}
-          className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
-        >
-          <label className="flex-1 text-sm text-text-muted">
-            Owner
-            <Input
-              name="owner"
-              placeholder="e.g. vercel"
-              required
-              className="mt-1"
-            />
-          </label>
-          <label className="flex-1 text-sm text-text-muted">
-            Repository
-            <Input
-              name="name"
-              placeholder="e.g. next.js"
-              required
-              className="mt-1"
-            />
-          </label>
-          <label className="flex-1 text-sm text-text-muted">
-            Default base branch (optional)
-            <Input name="defaultBaseBranch" placeholder="main" className="mt-1" />
-          </label>
-          <Button type="submit" variant="accent" disabled={submitting}>
-            {submitting ? "Adding…" : "Add Repo"}
-          </Button>
-        </form>
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="font-medium">Add a repo</h2>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant={mode === "picker" ? "accent" : "default"}
+              onClick={() => githubConnected && setMode("picker")}
+              disabled={!githubConnected}
+              className="px-2.5 py-1"
+            >
+              From GitHub
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "manual" ? "accent" : "default"}
+              onClick={() => setMode("manual")}
+              className="px-2.5 py-1"
+            >
+              Manually
+            </Button>
+          </div>
+        </div>
+
+        {!githubConnected ? (
+          <p className="mt-2 text-sm text-text-muted">
+            Connect GitHub on the Integrations page to pick repos from your
+            account instead of typing them.
+          </p>
+        ) : null}
+
+        {mode === "picker" && githubConnected ? (
+          <div className="mt-3">
+            {!ghLoaded ? (
+              <Button onClick={loadGithubRepos} variant="accent" disabled={ghLoading}>
+                {ghLoading ? "Loading…" : "Load my GitHub repositories"}
+              </Button>
+            ) : ghRepos.length === 0 ? (
+              <p className="text-sm text-text-muted">
+                Nothing new found — all your reachable repos are already
+                connected.{" "}
+                <button
+                  type="button"
+                  onClick={() => setGhLoaded(false)}
+                  className="text-accent hover:underline"
+                >
+                  Reload
+                </button>{" "}
+                or switch to Manually.
+              </p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto rounded-card border border-border">
+                {ghRepos.map((repo, index) => (
+                  <div
+                    key={`${repo.owner}/${repo.name}`}
+                    className={`flex items-center justify-between px-4 py-2.5 ${
+                      index === ghRepos.length - 1 ? "" : "border-b border-border"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-text">
+                        {repo.owner}/{repo.name}
+                        {repo.isPrivate ? (
+                          <span className="ml-2 text-xs text-text-muted">
+                            private
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        default branch: {repo.defaultBranch}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => handlePick(repo)}
+                      disabled={submitting}
+                      className="shrink-0"
+                    >
+                      Connect
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {ghError ? (
+              <div className="mt-3">
+                <Badge variant="danger">{ghError}</Badge>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {mode === "manual" || !githubConnected ? (
+          <form
+            onSubmit={handleAdd}
+            className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
+          >
+            <label className="flex-1 text-sm text-text-muted">
+              Owner
+              <Input
+                name="owner"
+                placeholder="e.g. vercel"
+                required
+                className="mt-1"
+              />
+            </label>
+            <label className="flex-1 text-sm text-text-muted">
+              Repository
+              <Input
+                name="name"
+                placeholder="e.g. next.js"
+                required
+                className="mt-1"
+              />
+            </label>
+            <label className="flex-1 text-sm text-text-muted">
+              Default base branch (optional)
+              <Input name="defaultBaseBranch" placeholder="main" className="mt-1" />
+            </label>
+            <Button type="submit" variant="accent" disabled={submitting}>
+              {submitting ? "Adding…" : "Add Repo"}
+            </Button>
+          </form>
+        ) : null}
+
         {formError ? (
           <div className="mt-3">
             <Badge variant="danger">{formError}</Badge>
@@ -183,7 +344,11 @@ export function RepoList({ initialRepos }: { initialRepos: RepoListItem[] }) {
         {repos.length === 0 ? (
           <Row
             title="No repos connected yet"
-            description="Add your first repository above to start receiving push events."
+            description={
+              githubConnected
+                ? "Load your GitHub repositories above and connect one in a single click."
+                : "Add your first repository above to start receiving push events."
+            }
             last
           />
         ) : (
@@ -217,9 +382,7 @@ export function RepoList({ initialRepos }: { initialRepos: RepoListItem[] }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 p-4">
           <Card className="w-full max-w-lg p-6">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-h1">
-                Add the webhook on GitHub
-              </h2>
+              <h2 className="text-h1">Add the webhook on GitHub</h2>
               <Badge variant="danger">Secret shown once</Badge>
             </div>
 
