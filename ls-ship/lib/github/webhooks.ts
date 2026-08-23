@@ -52,9 +52,12 @@ export async function upsertRepoWebhook(
     return { status: "created", hookId: created.id };
   } catch (error) {
     let reason = error instanceof Error ? error.message : String(error);
-    if (/403|forbidden/i.test(reason)) {
+    if (/404|not found/i.test(reason)) {
       reason =
-        "your GitHub token lacks admin rights on this repo (org repos often restrict webhooks)";
+        "your GitHub authorization predates the webhook permission — click Reconnect on the Integrations page, then retry";
+    } else if (/403|forbidden/i.test(reason)) {
+      reason =
+        "your GitHub account lacks admin rights on this repo (org repos often restrict webhooks)";
     }
     return { status: "failed", reason };
   }

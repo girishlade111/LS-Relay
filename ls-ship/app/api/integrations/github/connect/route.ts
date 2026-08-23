@@ -28,8 +28,11 @@ export async function GET(request: Request) {
 
   const authorizeParams = new URLSearchParams({
     client_id: clientId,
+    // `repo`: read/pull private repos and create PRs.
+    // `admin:repo_hook`: create/manage the push webhook automatically —
+    // without it every webhook registration fails with 404/403.
+    scope: "repo,admin:repo_hook",
     redirect_uri: new URL(CALLBACK_PATH, origin).toString(),
-    scope: "repo",
     state: userId,
   });
 
