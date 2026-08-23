@@ -51,13 +51,35 @@ export async function POST(request: Request) {
   );
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+  const webhookUrl = `${origin}/api/webhooks/github/${repo.id}`;
+
+  // Register the webhook on GitHub automatically when the user's GitHub
+  // integration is available — the manual copy/paste flow is only a fallback.
+  const github = await getDecryptedIntegration(userId, "github");
+  let webhook: { status: string; message?: string } = {
+    status: "skipped",
+    message: "GitHub integration not connected — set the webhook manually",
+  };
+  if (github) {
+    const result = await upsertRepoWebhook(getGithubClient(github.accessToken), {
+      owner: parsed.data.owner,
+      repo: parsed.data.name,
+      url: webhookUrl,
+      secret: plaintextWebhookSecret,
+    });
+    webhook =
+      result.status === "failed"
+        ? { status: "failed", message: result.reason }
+        : { status: result.status };
+  }
 
   return NextResponse.json(
     {
       repo,
       // Plaintext secret is returned exactly once, for the one-time setup card.
       webhookSecret: plaintextWebhookSecret,
-      webhookUrl: `${origin}/api/webhooks/github/${repo.id}`,
+      webhookUrl,
+      webhook,
     },
     { status: 201 }
   );
