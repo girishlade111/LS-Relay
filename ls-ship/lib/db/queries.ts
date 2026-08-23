@@ -344,6 +344,7 @@ export async function listWebhookEvents(
       jiraKey: webhookEvents.jiraKey,
       status: webhookEvents.status,
       prUrl: webhookEvents.prUrl,
+      errorMessage: webhookEvents.errorMessage,
       createdAt: webhookEvents.createdAt,
     })
     .from(webhookEvents)
