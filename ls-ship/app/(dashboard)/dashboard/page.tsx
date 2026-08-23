@@ -93,7 +93,10 @@ export default async function OverviewPage() {
 
   return (
     <>
-      <h1 className="text-h1">Overview</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-h1">Overview</h1>
+        <AutoRefresh intervalSeconds={30} />
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Active Repos" value={activeRepos} />
