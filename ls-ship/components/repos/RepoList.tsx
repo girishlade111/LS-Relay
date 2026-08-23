@@ -260,36 +260,56 @@ export function RepoList({
                 or switch to Manually.
               </p>
             ) : (
-              <div className="max-h-72 overflow-y-auto rounded-card border border-border">
-                {ghRepos.map((repo, index) => (
-                  <div
-                    key={`${repo.owner}/${repo.name}`}
-                    className={`flex items-center justify-between px-4 py-2.5 ${
-                      index === ghRepos.length - 1 ? "" : "border-b border-border"
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-text">
-                        {repo.owner}/{repo.name}
-                        {repo.isPrivate ? (
-                          <span className="ml-2 text-xs text-text-muted">
-                            private
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="text-xs text-text-muted">
-                        default branch: {repo.defaultBranch}
-                      </p>
-                    </div>
-                    <Button
-                      onClick={() => handlePick(repo)}
-                      disabled={submitting}
-                      className="shrink-0"
-                    >
-                      Connect
-                    </Button>
+              <div>
+                <Input
+                  type="search"
+                  placeholder="Search repositories…"
+                  value={ghSearch}
+                  onChange={(event) => setGhSearch(event.target.value)}
+                  aria-label="Search repositories"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  {filteredGhRepos.length} of {ghRepos.length} repositories
+                </p>
+                {filteredGhRepos.length === 0 ? (
+                  <p className="mt-3 text-sm text-text-muted">
+                    No repositories match &ldquo;{ghSearch.trim()}&rdquo;.
+                  </p>
+                ) : (
+                  <div className="mt-2 max-h-72 overflow-y-auto rounded-card border border-border">
+                    {filteredGhRepos.map((repo, index) => (
+                      <div
+                        key={`${repo.owner}/${repo.name}`}
+                        className={`flex items-center justify-between px-4 py-2.5 ${
+                          index === filteredGhRepos.length - 1
+                            ? ""
+                            : "border-b border-border"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-text">
+                            {repo.owner}/{repo.name}
+                            {repo.isPrivate ? (
+                              <span className="ml-2 text-xs text-text-muted">
+                                private
+                              </span>
+                            ) : null}
+                          </p>
+                          <p className="text-xs text-text-muted">
+                            default branch: {repo.defaultBranch}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handlePick(repo)}
+                          disabled={submitting}
+                          className="shrink-0"
+                        >
+                          Connect
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
             {ghError ? (
