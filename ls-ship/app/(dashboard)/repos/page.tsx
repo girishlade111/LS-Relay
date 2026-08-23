@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getReposForUser } from "@/lib/db/queries";
+import { getReposForUser, listIntegrations } from "@/lib/db/queries";
 import { RepoList } from "@/components/repos/RepoList";
 
 export default async function ReposPage() {
@@ -8,12 +8,18 @@ export default async function ReposPage() {
     return null;
   }
 
-  const repos = await getReposForUser(userId);
+  const [repos, integrations] = await Promise.all([
+    getReposForUser(userId),
+    listIntegrations(userId),
+  ]);
+  const githubConnected = integrations.some(
+    (integration) => integration.provider === "github"
+  );
 
   return (
     <>
       <h1 className="text-h1">Repos</h1>
-      <RepoList initialRepos={repos} />
+      <RepoList initialRepos={repos} githubConnected={githubConnected} />
     </>
   );
 }
