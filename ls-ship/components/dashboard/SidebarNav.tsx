@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const links = [
-  { href: "/", label: "Overview" },
+  { href: "/dashboard", label: "Overview" },
   { href: "/repos", label: "Repos" },
   { href: "/integrations", label: "Integrations" },
   { href: "/logs", label: "Logs" },
@@ -16,25 +16,20 @@ export function SidebarNav() {
 
   return (
     <nav className="flex flex-col gap-0.5">
-      {links.map(({ href, label }) => {
-        const active =
-          href === "/" ? pathname === "/" : pathname.startsWith(href);
-
-        return (
-          <Link
-            key={href}
-            href={href}
-            aria-current={active ? "page" : undefined}
-            className={`rounded-control px-2 py-1.5 text-sm transition-colors duration-150 ${
-              active
-                ? "bg-panel-2 text-text"
-                : "text-text-muted hover:bg-panel-hover hover:text-text"
-            }`}
-          >
-            {label}
-          </Link>
-        );
-      })}
+      {links.map(({ href, label }) => (
+        <Link
+          key={href}
+          href={href}
+          aria-current={pathname.startsWith(href) ? "page" : undefined}
+          className={`rounded-control px-2 py-1.5 text-sm transition-colors duration-150 ${
+            pathname.startsWith(href)
+              ? "bg-panel-2 text-text"
+              : "text-text-muted hover:bg-panel-hover hover:text-text"
+          }`}
+        >
+          {label}
+        </Link>
+      ))}
     </nav>
   );
 }
