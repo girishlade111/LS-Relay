@@ -119,7 +119,19 @@ export default async function IntegrationsPage({
                 >
                   Connect {name}
                 </Button>
-              ) : null}
+              ) : (
+                <div className="mt-3">
+                  <Button
+                    href={`/api/integrations/${provider}/connect`}
+                    className="px-2.5 py-1 text-xs"
+                  >
+                    Reconnect
+                  </Button>
+                  <p className="mt-1 text-xs text-faint">
+                    Use if permissions changed on the provider side.
+                  </p>
+                </div>
+              )}
 
               {/* Channel picking is automatic now: the dropdown lists every
                   Slack channel via conversations.list. The fallback input also
