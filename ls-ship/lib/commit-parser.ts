@@ -1,4 +1,13 @@
-export const COMMIT_MESSAGE_REGEX = /^([A-Z]+-\d+)\s(.*?)(?:\s\[(.*)\])?$/;
+// The negative lookahead after the key keeps `[...]` from being parsed as the
+// start of the description when it is really a flags block on a key-only
+// message ("PROJ-102 [auto-pr]" must stay invalid, per docs).
+export const COMMIT_MESSAGE_REGEX =
+  /^([A-Z]+-\d+)\s(?!\[)(.+?)(?:\s\[([^\]]*)\])?$/;
+
+// A bracketed flag block with nothing before it (e.g. "KEY-1 [auto-pr]")
+// carries no description — treated as malformed rather than silently
+// swallowing the flags into the description text.
+const FLAGS_WITHOUT_DESCRIPTION = /^\[.*\]$/;
 
 export interface GitHubPushCommit {
   id: string;
@@ -34,7 +43,11 @@ export function parseSingleCommit(
   message: string,
   pushBranch: string
 ): ParsedCommitData {
-  const match = COMMIT_MESSAGE_REGEX.exec(message);
+  // Only the subject line carries automation flags; anything after the first
+  // newline is a commit body and must not break parsing. Trimming guards
+  // against stray leading/trailing whitespace around the anchored regex.
+  const subject = (message.split("\n", 1)[0] ?? "").trim();
+  const match = COMMIT_MESSAGE_REGEX.exec(subject);
 
   if (!match) {
     throw new Error(
@@ -45,6 +58,12 @@ export function parseSingleCommit(
   const jiraKey = match[1];
   const commitDescription = match[2];
   const flagString = match.length > 3 ? match[3] : undefined;
+
+  if (!commitDescription || FLAGS_WITHOUT_DESCRIPTION.test(commitDescription)) {
+    throw new Error(
+      "Commit message format is incorrect. Missing task key or message."
+    );
+  }
 
   const commands =
     flagString !== undefined

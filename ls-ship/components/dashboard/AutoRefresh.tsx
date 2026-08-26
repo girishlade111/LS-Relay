@@ -18,7 +18,10 @@ export function AutoRefresh({ intervalSeconds = 30 }: { intervalSeconds?: number
   }, [router, intervalSeconds]);
 
   return (
-    <span className="text-xs text-faint" title="Auto-refreshes every 30s">
+    <span
+      className="text-xs text-faint"
+      title={`Auto-refreshes every ${intervalSeconds}s`}
+    >
       auto-refreshes every {intervalSeconds}s
       {lastRefreshedAt
         ? ` · last ${lastRefreshedAt.toLocaleTimeString("en-US", {

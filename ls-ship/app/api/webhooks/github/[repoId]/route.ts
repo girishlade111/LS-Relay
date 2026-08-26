@@ -12,6 +12,8 @@ import { getGithubClient } from "@/lib/github/client";
 import { checkPRExists, createPR } from "@/lib/github/pr";
 import { verifyGithubSignature } from "@/lib/github/verify-signature";
 import type { JiraCreds } from "@/lib/jira/client";
+import { JiraApiError } from "@/lib/jira/client";
+import { getFreshJiraCreds } from "@/lib/jira/session";
 import { getTask, updateTaskStatus } from "@/lib/jira/task";
 import { appendNotionBlock } from "@/lib/notion/notify";
 import { postSlackMessage } from "@/lib/slack/notify";
@@ -23,9 +25,9 @@ interface PushPayload {
 
 const REFS_HEADS_PREFIX = "refs/heads/";
 // Transition id for "Development Done", inherited from the legacy n8n
-// workflow. TODO: make this a per-repo configurable setting instead of a
-// hardcoded constant — Jira workflows differ per team.
-const JIRA_DONE_TRANSITION_ID = "61";
+// workflow. Overridable per deployment via env; TODO: make this a per-repo
+// configurable setting instead — Jira workflows differ per team.
+const JIRA_DONE_TRANSITION_ID = process.env.JIRA_DONE_TRANSITION_ID ?? "61";
 
 function branchFromRef(fullRef: string): string {
   return fullRef.startsWith(REFS_HEADS_PREFIX)
@@ -75,6 +77,9 @@ function notificationText(
   return `[LS Ship] Marked ${commit.jiraKey} as Development Done on ${repoLabel}`;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   request: Request,
   { params }: { params: { repoId: string } }
@@ -83,6 +88,13 @@ export async function POST(
   // read the body as text before any JSON parsing.
   const rawBody = await request.text();
 
+  // A malformed id must never reach Postgres: an invalid uuid literal makes
+  // the query throw, and the resulting 5xx would make GitHub retry (then
+  // disable) a webhook that can never succeed.
+  if (!UUID_PATTERN.test(params.repoId)) {
+    return NextResponse.json({ ok: true, skipped: "invalid_repo_id" });
+  }
+
   const repo = await getRepoById(params.repoId);
   if (!repo || !repo.active) {
     // Not an error worth retrying: returning non-2xx would eventually make
@@ -90,7 +102,15 @@ export async function POST(
     return NextResponse.json({ ok: true, skipped: "unknown_or_inactive_repo" });
   }
 
-  const webhookSecret = decrypt(repo.webhookSecret);
+  let webhookSecret: string;
+  try {
+    webhookSecret = decrypt(repo.webhookSecret);
+  } catch {
+    // A corrupted stored secret must not turn the endpoint into a 5xx —
+    // GitHub would retry and then disable the hook. Surface it as a skip.
+    return NextResponse.json({ ok: true, skipped: "secret_unreadable" });
+  }
+
   const signature = request.headers.get("x-hub-signature-256");
   if (!verifyGithubSignature(rawBody, signature, webhookSecret)) {
     return NextResponse.json(
@@ -130,12 +150,43 @@ export async function POST(
 
   // Integrations are memoized per request so N commits in one push cost one
   // lookup each (decrypted values stay in memory only).
-  let jiraPromise: Promise<DecryptedIntegration | null> | undefined;
-  const loadJira = () =>
-    (jiraPromise ??= getDecryptedIntegration(repo.userId, "jira"));
   let githubPromise: Promise<DecryptedIntegration | null> | undefined;
   const loadGithub = () =>
     (githubPromise ??= getDecryptedIntegration(repo.userId, "github"));
+
+  // Runs a Jira operation with refresh-aware credentials. On a 401 the token
+  // is force-refreshed once and the operation retried — covers tokens that
+  // expired between the expiry check and the call, or were revoked early.
+  const runWithJira = async <T>(
+    run: (creds: JiraCreds) => Promise<T>
+  ): Promise<T> => {
+    const integration = await getFreshJiraCreds(repo.userId);
+    if (!integration) {
+      throw new Error(
+        "Jira integration is not connected or has no site selected"
+      );
+    }
+    const cloudId = metadataString(integration.metadata, "cloudId");
+    if (!cloudId) {
+      throw new Error("Jira integration has no site selected");
+    }
+
+    const creds: JiraCreds = { accessToken: integration.accessToken, cloudId };
+    try {
+      return await run(creds);
+    } catch (error) {
+      if (!(error instanceof JiraApiError) || error.status !== 401) {
+        throw error;
+      }
+      const fresh = await getFreshJiraCreds(repo.userId, true);
+      const freshCloudId =
+        fresh ? metadataString(fresh.metadata, "cloudId") : null;
+      if (!fresh || !freshCloudId) {
+        throw error;
+      }
+      return run({ accessToken: fresh.accessToken, cloudId: freshCloudId });
+    }
+  };
 
   for (const commit of valid) {
     // A normal commit with no automation flags is expected behavior, not a
@@ -153,19 +204,7 @@ export async function POST(
     }
 
     try {
-      const jira = await loadJira();
-      const cloudId = jira ? metadataString(jira.metadata, "cloudId") : null;
-      if (!jira || !cloudId) {
-        throw new Error(
-          "Jira integration is not connected or has no site selected"
-        );
-      }
-      const jiraCreds: JiraCreds = {
-        accessToken: jira.accessToken,
-        cloudId,
-      };
-
-      const task = await getTask(jiraCreds, commit.jiraKey);
+      const task = await runWithJira((creds) => getTask(creds, commit.jiraKey));
       if (!task) {
         throw new Error(`Jira task ${commit.jiraKey} not found`);
       }
@@ -208,7 +247,9 @@ export async function POST(
       if (commit.taskCompleted) {
         // PR statuses take priority for the log entry, but the Jira update
         // still happens regardless of whether a PR action occurred.
-        await updateTaskStatus(jiraCreds, commit.jiraKey, JIRA_DONE_TRANSITION_ID);
+        await runWithJira((creds) =>
+          updateTaskStatus(creds, commit.jiraKey, JIRA_DONE_TRANSITION_ID)
+        );
       }
 
       // Best-effort notifications: allSettled guarantees a Slack failure can't

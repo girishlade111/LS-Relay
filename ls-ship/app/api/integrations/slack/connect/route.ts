@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { bindOAuthState, createOAuthState } from "@/lib/oauth/state";
 
 const SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
 const CALLBACK_PATH = "/api/integrations/slack/callback";
@@ -20,12 +21,22 @@ export async function GET(request: Request) {
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
 
+  // Same CSRF pattern as every connect route: a random nonce bound to an
+  // httpOnly cookie, verified at the callback (see lib/oauth/state.ts).
   const authorizeParams = new URLSearchParams({
     client_id: clientId,
-    scope: "chat:write",
+    // `chat:write` posts messages; `channels:read` / `groups:read` power the
+    // conversations.list dropdown on the Integrations page — without them the
+    // call fails with missing_scope and users must paste IDs manually.
+    scope: "chat:write,channels:read,groups:read",
     redirect_uri: new URL(CALLBACK_PATH, origin).toString(),
-    state: userId,
+    state: createOAuthState(),
   });
 
-  return NextResponse.redirect(`${SLACK_AUTHORIZE_URL}?${authorizeParams}`);
+  const response = NextResponse.redirect(
+    `${SLACK_AUTHORIZE_URL}?${authorizeParams}`
+  );
+  bindOAuthState(response, "slack", authorizeParams.get("state") ?? "");
+
+  return response;
 }

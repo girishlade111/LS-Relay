@@ -185,19 +185,27 @@ export function RepoList({
 
   async function handleToggle(repoId: string, active: boolean) {
     setActionError(null);
-    setRepos((prev) =>
-      prev.map((repo) => (repo.id === repoId ? { ...repo, active } : repo))
-    );
-    const response = await fetch("/api/repos", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repoId, active }),
-    });
-    if (!response.ok) {
-      setActionError("Could not update the repo — please retry");
+    const revert = () =>
       setRepos((prev) =>
         prev.map((repo) => (repo.id === repoId ? { ...repo, active: !active } : repo))
       );
+    setRepos((prev) =>
+      prev.map((repo) => (repo.id === repoId ? { ...repo, active } : repo))
+    );
+    try {
+      const response = await fetch("/api/repos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoId, active }),
+      });
+      if (!response.ok) {
+        setActionError("Could not update the repo — please retry");
+        revert();
+      }
+    } catch {
+      // Network failure — the server never saw the change, so roll back.
+      setActionError("Network error — could not update the repo");
+      revert();
     }
   }
 
@@ -213,14 +221,19 @@ export function RepoList({
     setActionError(null);
     const snapshot = repos;
     setRepos((prev) => prev.filter((r) => r.id !== repo.id));
-    const response = await fetch("/api/repos", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repoId: repo.id }),
-    });
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/repos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoId: repo.id }),
+      });
+      if (!response.ok) {
+        setRepos(snapshot);
+        setActionError("Could not delete the repo — please retry");
+      }
+    } catch {
       setRepos(snapshot);
-      setActionError("Could not delete the repo — please retry");
+      setActionError("Network error — could not delete the repo");
     }
   }
 
@@ -414,8 +427,13 @@ export function RepoList({
                   <Toggle
                     checked={repo.active}
                     onChange={(active) => handleToggle(repo.id, active)}
+                    aria-label={`Activate or deactivate ${repo.owner}/${repo.name}`}
                   />
-                  <Button variant="danger" onClick={() => handleDelete(repo)}>
+                  <Button
+                    variant="danger"
+                    onClick={() => handleDelete(repo)}
+                    aria-label={`Delete ${repo.owner}/${repo.name}`}
+                  >
                     Delete
                   </Button>
                 </div>

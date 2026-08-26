@@ -16,7 +16,11 @@ export class JiraApiError extends Error {
   readonly status: number;
 
   constructor(path: string, status: number, bodySnippet: string) {
-    super(`Jira API ${path} failed (${status}): ${bodySnippet}`);
+    // The class enforces the cap itself so oversized context can never leak
+    // into logs or DB error columns regardless of the call site.
+    super(
+      `Jira API ${path} failed (${status}): ${truncate(bodySnippet)}`
+    );
     this.name = "JiraApiError";
     this.status = status;
   }

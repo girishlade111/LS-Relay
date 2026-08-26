@@ -16,7 +16,7 @@ sequenceDiagram
 
     Note over User,Slack: 1. OAuth 2.0 Flow
     User->>App: Click "Connect Slack" (/api/integrations/slack/connect)
-    App->>Slack: Redirect to oauth.v2.authorize (scope: chat:write) + state=userId
+    App->>Slack: Redirect to oauth.v2.authorize (scopes: chat:write, channels:read, groups:read) + state=nonce
     Slack->>User: Select Workspace & Channel permissions
     User->>Slack: Approve App
     Slack->>App: Redirect with code (/api/integrations/slack/callback)
@@ -54,8 +54,8 @@ sequenceDiagram
    - Click **Save URLs**.
 5. Scroll down to **Scopes** -> **Bot Token Scopes** and add:
    - `chat:write` — Allows the bot to post messages to channels.
-   - `channels:read` — *(Optional)* Lists public channels in the workspace.
-   - `groups:read` — *(Optional)* Lists private channels where the bot is invited.
+   - `channels:read` — *(Required)* Lists public channels in the workspace.
+   - `groups:read` — *(Required)* Lists private channels where the bot is invited.
 6. In the left sidebar, navigate to **Basic Information**:
    - Under **App Credentials**, copy your **Client ID** and **Client Secret**.
 7. Store the credentials in your `.env.local`:
@@ -74,7 +74,7 @@ Located at [`app/api/integrations/slack/connect/route.ts`](file:///c:/Users/Giri
 
 - Directs the browser to `https://slack.com/oauth/v2/authorize`.
 - Passes the authenticated Clerk `userId` as `state` for CSRF validation.
-- Requests the `chat:write` bot scope.
+Requests the chat:write, channels:read, and groups:read bot scopes.
 
 ### 2. Callback & Token Exchange (`/api/integrations/slack/callback`)
 

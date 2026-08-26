@@ -3,19 +3,24 @@ import "server-only";
 interface TokenRefreshResponse {
   access_token?: string;
   refresh_token?: string;
+  expires_in?: number;
+}
+
+export interface RefreshedJiraTokens {
+  accessToken: string;
+  refreshToken: string;
+  /** Seconds until the new access token expires, when the provider reports it. */
+  expiresInSeconds: number | null;
 }
 
 // Jira access tokens expire after 1 hour (`expires_in: 3600`), unlike GitHub's
-// non-expiring OAuth App tokens — so every Jira call site must be refresh-aware.
-// The contract: store `expiresAt` (ISO timestamp) in `integrations.metadata`
-// alongside cloudId; before any Jira API request, compare it to Date.now() and
-// if expired call refreshJiraToken with the stored (decrypted) refresh token,
-// then re-encrypt BOTH new tokens via encrypt() and write them back through
-// upsertIntegration before retrying the request. This wiring happens in the
-// webhook handler (Prompt 12), not here.
+// non-expiring OAuth App tokens. lib/jira/session.ts consumes this function to
+// keep credentials fresh: it compares `metadata.expiresAt` to Date.now(),
+// refreshes when needed, re-encrypts BOTH tokens and writes them back through
+// upsertIntegration before the caller retries the request.
 export async function refreshJiraToken(
   refreshToken: string
-): Promise<{ accessToken: string; refreshToken: string }> {
+): Promise<RefreshedJiraTokens> {
   const clientId = process.env.JIRA_CLIENT_ID;
   const clientSecret = process.env.JIRA_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -56,5 +61,7 @@ export async function refreshJiraToken(
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token ?? refreshToken,
+    expiresInSeconds:
+      typeof data.expires_in === "number" ? data.expires_in : null,
   };
 }

@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { bindOAuthState, createOAuthState } from "@/lib/oauth/state";
 
 const ATLASSIAN_AUTHORIZE_URL = "https://auth.atlassian.com/authorize";
 const CALLBACK_PATH = "/api/integrations/jira/callback";
@@ -23,17 +24,22 @@ export async function GET(request: Request) {
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
 
-  // Same CSRF pattern as the GitHub connect route: `state` is the Clerk user id
-  // and the callback only accepts it when it matches the live session's user id.
+  // Same CSRF pattern as every connect route: a random nonce bound to an
+  // httpOnly cookie, verified at the callback (see lib/oauth/state.ts).
   const authorizeParams = new URLSearchParams({
     client_id: clientId,
     scope: "read:jira-work write:jira-work offline_access",
     redirect_uri: new URL(CALLBACK_PATH, origin).toString(),
-    state: userId,
+    state: createOAuthState(),
     response_type: "code",
     audience: "api.atlassian.com",
     prompt: "consent",
   });
 
-  return NextResponse.redirect(`${ATLASSIAN_AUTHORIZE_URL}?${authorizeParams}`);
+  const response = NextResponse.redirect(
+    `${ATLASSIAN_AUTHORIZE_URL}?${authorizeParams}`
+  );
+  bindOAuthState(response, "jira", authorizeParams.get("state") ?? "");
+
+  return response;
 }

@@ -400,13 +400,8 @@ dist/
 *.less.map
 *.styl.map
 
-# Compiled JavaScript
-*.js
-*.mjs
-*.cjs
-
-# Compiled CSS
-*.css
+# Compiled JavaScript — source .ts/.tsx/.mjs configs must stay tracked,
+# so only build-output patterns would belong here (none currently needed).
 
 # Compiled assets
 *.min.js
@@ -492,8 +487,7 @@ desktop.ini
 .caches/*
 .cached/*
 
-# Lock files
-package-lock.json
+# Lock files — package-lock.json MUST be committed for reproducible installs.
 yarn.lock
 pnpm-lock.yaml
 

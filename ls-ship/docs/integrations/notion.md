@@ -16,7 +16,7 @@ sequenceDiagram
 
     Note over User,Notion: 1. Public Integration OAuth Flow
     User->>App: Click "Connect Notion" (/api/integrations/notion/connect)
-    App->>Notion: Redirect to oauth/authorize (owner: user) + state=userId
+    App->>Notion: Redirect to oauth/authorize (owner: user) + state=nonce (httpOnly cookie)
     Notion->>User: Select Notion Workspace & Pages to share
     User->>Notion: Grant page permissions
     Notion->>App: Callback with code (/api/integrations/notion/callback)

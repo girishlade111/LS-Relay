@@ -16,7 +16,7 @@ sequenceDiagram
 
     Note over Dev,GH: 1. OAuth Authorization Flow
     Dev->>App: Click "Connect GitHub" (/api/integrations/github/connect)
-    App->>GH: Redirect with scopes (repo, admin:repo_hook) + state=userId
+    App->>GH: Redirect with scopes (repo, admin:repo_hook) + state=nonce (httpOnly cookie)
     GH->>Dev: Prompt for consent
     Dev->>GH: Grant authorization
     GH->>App: Callback with code & state (/api/integrations/github/callback)

@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -34,18 +35,29 @@ export const users = pgTable("users", {
   defaultBaseBranch: text("defaultBaseBranch"),
 });
 
-export const integrations = pgTable("integrations", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("userId")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  provider: integrationProvider("provider").notNull(),
-  // Encrypted values — never stored or handled in plaintext.
-  accessToken: text("accessToken").notNull(),
-  refreshToken: text("refreshToken"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const integrations = pgTable(
+  "integrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: integrationProvider("provider").notNull(),
+    // Encrypted values — never stored or handled in plaintext.
+    accessToken: text("accessToken").notNull(),
+    refreshToken: text("refreshToken"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => [
+    // One integration per provider per user — lets upserts be atomic instead
+    // of check-then-insert (which raced under concurrent OAuth callbacks).
+    uniqueIndex("integrations_user_id_provider_key").on(
+      table.userId,
+      table.provider
+    ),
+  ]
+);
 
 export const repos = pgTable("repos", {
   id: uuid("id").primaryKey().defaultRandom(),

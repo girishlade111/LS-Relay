@@ -19,10 +19,14 @@ export async function ensureUserSynced(
   clerkUserId: string,
   email: string
 ): Promise<void> {
+  // Refresh the stored email too, so Clerk profile changes propagate.
   await db
     .insert(users)
     .values({ id: clerkUserId, email })
-    .onConflictDoNothing({ target: users.id });
+    .onConflictDoUpdate({
+      target: users.id,
+      set: { email },
+    });
 }
 
 export interface IntegrationCredentials {
@@ -36,17 +40,8 @@ export async function upsertIntegration(
   provider: IntegrationProviderValue,
   credentials: IntegrationCredentials
 ): Promise<void> {
-  // `integrations` has no unique index on (userId, provider), so a native
-  // onConflictDoUpdate isn't possible yet — resolve the existing row manually.
-  // Adding that index would turn this into one atomic upsert statement.
-  const [existing] = await db
-    .select({ id: integrations.id })
-    .from(integrations)
-    .where(
-      and(eq(integrations.userId, userId), eq(integrations.provider, provider))
-    )
-    .limit(1);
-
+  // Atomic thanks to the unique index on (userId, provider): concurrent OAuth
+  // callbacks can no longer race a check-then-insert into duplicate rows.
   const patch: Partial<typeof integrations.$inferInsert> = {
     accessToken: credentials.encryptedAccessToken,
   };
@@ -57,21 +52,17 @@ export async function upsertIntegration(
     patch.metadata = credentials.metadata;
   }
 
-  if (existing) {
-    await db
-      .update(integrations)
-      .set(patch)
-      .where(eq(integrations.id, existing.id));
-    return;
-  }
-
-  await db.insert(integrations).values({
-    userId,
-    provider,
-    accessToken: credentials.encryptedAccessToken,
-    refreshToken: credentials.encryptedRefreshToken,
-    metadata: credentials.metadata,
-  });
+  await db
+    .insert(integrations)
+    .values({
+      userId,
+      provider,
+      accessToken: credentials.encryptedAccessToken,
+    })
+    .onConflictDoUpdate({
+      target: [integrations.userId, integrations.provider],
+      set: patch,
+    });
 }
 
 export type IntegrationRow = typeof integrations.$inferSelect;
@@ -173,39 +164,28 @@ export async function createRepo(
 
 // Both mutations are scoped by repoId AND userId — a repoId alone must never
 // be trusted from the client, since any user could otherwise guess/iterate ids.
-async function mutateOwnedRepo(
-  repoId: string,
-  userId: string,
-  run: () => Promise<unknown>
-): Promise<boolean> {
-  const [match] = await db
-    .select({ id: repos.id })
-    .from(repos)
-    .where(and(eq(repos.id, repoId), eq(repos.userId, userId)))
-    .limit(1);
-
-  if (!match) {
-    return false;
-  }
-
-  await run();
-  return true;
-}
-
+// A single scoped statement keeps the ownership check and the write atomic.
 export async function toggleRepoActive(
   repoId: string,
   userId: string,
   active: boolean
 ): Promise<boolean> {
-  return mutateOwnedRepo(repoId, userId, () =>
-    db.update(repos).set({ active }).where(eq(repos.id, repoId))
-  );
+  const updated = await db
+    .update(repos)
+    .set({ active })
+    .where(and(eq(repos.id, repoId), eq(repos.userId, userId)))
+    .returning({ id: repos.id });
+
+  return updated.length > 0;
 }
 
 export async function deleteRepo(repoId: string, userId: string): Promise<boolean> {
-  return mutateOwnedRepo(repoId, userId, () =>
-    db.delete(repos).where(eq(repos.id, repoId))
-  );
+  const deleted = await db
+    .delete(repos)
+    .where(and(eq(repos.id, repoId), eq(repos.userId, userId)))
+    .returning({ id: repos.id });
+
+  return deleted.length > 0;
 }
 
 export interface RepoWithSecret {

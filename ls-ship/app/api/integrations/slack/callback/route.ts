@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { encrypt } from "@/lib/crypto";
 import { upsertIntegration } from "@/lib/db/queries";
+import { clearOAuthState, isOAuthStateValid } from "@/lib/oauth/state";
 
 const SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 
@@ -13,23 +14,20 @@ interface SlackOAuthResponse {
   access_token?: string; // bot token (xoxb-…)
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl;
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
   const { userId } = await auth();
 
-  // `state` must equal the current session's Clerk user id (see connect route).
-  if (!userId || !code || !state || state !== userId) {
-    return NextResponse.redirect(new URL("/integrations?error=slack_state", url));
+  // The state nonce must match the httpOnly cookie set during /connect.
+  if (!userId || !code || !isOAuthStateValid(request, "slack")) {
+    return finishWith(url, "/integrations?error=slack_state");
   }
 
   const clientId = process.env.SLACK_CLIENT_ID;
   const clientSecret = process.env.SLACK_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=not_configured", url)
-    );
+    return finishWith(url, "/integrations?error=not_configured");
   }
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
@@ -43,29 +41,37 @@ export async function GET(request: Request) {
         client_id: clientId,
         client_secret: clientSecret,
         code,
-        redirect_uri: new URL("/api/integrations/slack/callback", origin).toString(),
+        redirect_uri: new URL(
+          "/api/integrations/slack/callback",
+          origin
+        ).toString(),
       }),
       signal: AbortSignal.timeout(10_000),
     });
     data = (await response.json()) as SlackOAuthResponse;
   } catch {
-    return NextResponse.redirect(
-      new URL("/integrations?error=token_exchange", url)
-    );
+    return finishWith(url, "/integrations?error=token_exchange");
   }
 
   if (!data.ok || !data.access_token) {
-    return NextResponse.redirect(
-      new URL(`/integrations?error=${data.error ?? "token_exchange"}`, url)
+    return finishWith(
+      url,
+      `/integrations?error=${encodeURIComponent(data.error ?? "token_exchange")}`
     );
   }
 
   // The channel a bot posts into is chosen later by the user on the
-  // integrations page, so metadata starts empty.
+  // integrations page. Metadata is deliberately omitted so a reconnect
+  // refreshes only the token and never wipes a saved channelId.
   await upsertIntegration(userId, "slack", {
     encryptedAccessToken: encrypt(data.access_token),
-    metadata: {},
   });
 
-  return NextResponse.redirect(new URL("/integrations?success=slack", url));
+  return finishWith(url, "/integrations?success=slack");
+}
+
+function finishWith(url: URL, redirectTo: string): NextResponse {
+  const response = NextResponse.redirect(new URL(redirectTo, url));
+  clearOAuthState(response, "slack");
+  return response;
 }

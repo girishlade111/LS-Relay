@@ -29,13 +29,22 @@ function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+// Malformed request bodies must answer 400, not crash into a 500.
+async function readJson(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
     return unauthorized();
   }
 
-  const parsed = createSchema.safeParse(await request.json());
+  const parsed = createSchema.safeParse(await readJson(request));
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid input" },
@@ -91,7 +100,7 @@ export async function PATCH(request: Request) {
     return unauthorized();
   }
 
-  const parsed = toggleSchema.safeParse(await request.json());
+  const parsed = toggleSchema.safeParse(await readJson(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
@@ -114,7 +123,7 @@ export async function DELETE(request: Request) {
     return unauthorized();
   }
 
-  const parsed = deleteSchema.safeParse(await request.json());
+  const parsed = deleteSchema.safeParse(await readJson(request));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }

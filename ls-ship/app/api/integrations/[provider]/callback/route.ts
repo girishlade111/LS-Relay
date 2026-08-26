@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
 
+const KNOWN_PROVIDERS = new Set(["github", "jira", "slack", "notion"]);
+
 export async function GET(
   _request: Request,
   { params }: { params: { provider: string } }
 ) {
-  // TODO: exchange OAuth code for tokens and store encrypted
+  // Concrete provider routes handle the real flows; this catch-all only
+  // exists so unknown providers fail loudly instead of hitting dead ends.
+  if (!KNOWN_PROVIDERS.has(params.provider)) {
+    return NextResponse.json(
+      { error: `Unknown provider: ${params.provider}` },
+      { status: 404 }
+    );
+  }
   return NextResponse.json({ todo: "callback", provider: params.provider });
 }

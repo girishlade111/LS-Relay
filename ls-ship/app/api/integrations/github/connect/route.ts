@@ -1,15 +1,14 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { bindOAuthState, createOAuthState } from "@/lib/oauth/state";
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const CALLBACK_PATH = "/api/integrations/github/callback";
 
-// CSRF protection for the OAuth round-trip: `state` carries the Clerk user id
-// and the callback rejects any response whose state doesn't match the user id
-// of the *current* session. An attacker can initiate the flow but can never
-// complete it against a victim session, since the pairing only holds when both
-// values come from the same logged-in browser. A signed random nonce would
-// only be needed for flows without a live session to compare against.
+// CSRF protection for the OAuth round-trip: `state` is a random nonce bound
+// to a short-lived httpOnly cookie (see lib/oauth/state.ts). Only the browser
+// that initiated the flow holds the cookie, so a callback URL captured by an
+// attacker can never be replayed against someone else's session.
 export async function GET(request: Request) {
   const clientId = process.env.GITHUB_APP_CLIENT_ID;
   if (!clientId) {
@@ -33,8 +32,13 @@ export async function GET(request: Request) {
     // without it every webhook registration fails with 404/403.
     scope: "repo,admin:repo_hook",
     redirect_uri: new URL(CALLBACK_PATH, origin).toString(),
-    state: userId,
+    state: createOAuthState(),
   });
 
-  return NextResponse.redirect(`${GITHUB_AUTHORIZE_URL}?${authorizeParams}`);
+  const response = NextResponse.redirect(
+    `${GITHUB_AUTHORIZE_URL}?${authorizeParams}`
+  );
+  bindOAuthState(response, "github", authorizeParams.get("state") ?? "");
+
+  return response;
 }

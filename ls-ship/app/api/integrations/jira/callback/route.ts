@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { encrypt } from "@/lib/crypto";
 import { upsertIntegration } from "@/lib/db/queries";
+import { clearOAuthState, isOAuthStateValid } from "@/lib/oauth/state";
 
 const ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token";
 const ACCESSIBLE_RESOURCES_URL =
@@ -45,39 +46,35 @@ async function exchangeCodeForTokens(
   return (await response.json()) as AtlassianTokenResponse;
 }
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl;
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
   const { userId } = await auth();
 
-  // `state` must equal the current session's Clerk user id (see connect route).
-  if (!userId || !code || !state || state !== userId) {
-    return NextResponse.redirect(new URL("/integrations?error=jira_state", url));
+  // The state nonce must match the httpOnly cookie set during /connect.
+  if (!userId || !code || !isOAuthStateValid(request, "jira")) {
+    return finishWith(url, "/integrations?error=jira_state");
   }
 
   if (!process.env.JIRA_CLIENT_ID || !process.env.JIRA_CLIENT_SECRET) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=not_configured", url)
-    );
+    return finishWith(url, "/integrations?error=not_configured");
   }
 
   const origin = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
-  const redirectUri = new URL("/api/integrations/jira/callback", origin).toString();
+  const redirectUri = new URL(
+    "/api/integrations/jira/callback",
+    origin
+  ).toString();
 
   let tokens: AtlassianTokenResponse;
   try {
     tokens = await exchangeCodeForTokens(code, redirectUri);
   } catch {
-    return NextResponse.redirect(
-      new URL("/integrations?error=token_exchange", url)
-    );
+    return finishWith(url, "/integrations?error=token_exchange");
   }
 
   if (!tokens.access_token || !tokens.refresh_token) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=token_exchange", url)
-    );
+    return finishWith(url, "/integrations?error=token_exchange");
   }
 
   // A Jira integration is per-site: resolve which cloud (site) the token can
@@ -94,15 +91,11 @@ export async function GET(request: Request) {
     const resources = (await resourcesResponse.json()) as AccessibleResource[];
     cloudId = resources[0]?.id;
   } catch {
-    return NextResponse.redirect(
-      new URL("/integrations?error=sites_lookup", url)
-    );
+    return finishWith(url, "/integrations?error=sites_lookup");
   }
 
   if (!cloudId) {
-    return NextResponse.redirect(
-      new URL("/integrations?error=no_jira_sites", url)
-    );
+    return finishWith(url, "/integrations?error=no_jira_sites");
   }
 
   await upsertIntegration(userId, "jira", {
@@ -110,8 +103,8 @@ export async function GET(request: Request) {
     encryptedRefreshToken: encrypt(tokens.refresh_token),
     metadata: {
       cloudId,
-      // Jira access tokens live 1 hour; lib/jira/refresh.ts documents the
-      // check-and-refresh contract built on this timestamp.
+      // Jira access tokens live ~1 hour; lib/jira/session.ts consumes this
+      // timestamp to refresh transparently before expiry.
       expiresAt:
         typeof tokens.expires_in === "number"
           ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
@@ -119,5 +112,11 @@ export async function GET(request: Request) {
     },
   });
 
-  return NextResponse.redirect(new URL("/integrations?success=jira", url));
+  return finishWith(url, "/integrations?success=jira");
+}
+
+function finishWith(url: URL, redirectTo: string): NextResponse {
+  const response = NextResponse.redirect(new URL(redirectTo, url));
+  clearOAuthState(response, "jira");
+  return response;
 }

@@ -54,11 +54,13 @@ export function decrypt(payload: string): string {
   }
 
   const [ivB64, authTagB64, ciphertextB64] = parts;
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    loadKey(),
-    Buffer.from(ivB64, "base64")
-  );
+  const iv = Buffer.from(ivB64, "base64");
+  if (iv.length !== IV_BYTES) {
+    throw new Error(
+      `Invalid encrypted payload: IV must be ${IV_BYTES} bytes, got ${iv.length}`
+    );
+  }
+  const decipher = createDecipheriv("aes-256-gcm", loadKey(), iv);
   decipher.setAuthTag(Buffer.from(authTagB64, "base64"));
 
   return Buffer.concat([
